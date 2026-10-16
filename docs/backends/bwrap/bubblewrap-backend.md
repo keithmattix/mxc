@@ -157,6 +157,12 @@ Bubblewrap creates a namespace-isolated process by:
 The sandboxed process runs as a child of `bwrap` and dies automatically when
 execution completes — no container lifecycle management required.
 
+`bwrap` runs with `--die-with-parent`, whose parent-death signal Linux delivers
+when the *thread* that forked `bwrap` exits. MXC therefore forks `bwrap` from
+a dedicated thread that lives as long as the process, so a sandbox started from
+a pooled or short-lived thread (for example a Tokio `spawn_blocking` worker)
+survives that thread and dies only with the embedding process.
+
 The address-family filter is always active. Attempts to create VSOCK, packet,
 or other unlisted socket families fail with `EPERM`. Because io_uring can
 create sockets from submission-queue entries that seccomp cannot inspect, the
@@ -196,7 +202,6 @@ descriptors, but the workload cannot reopen the host terminal through
 `/dev/tty` or use it for terminal job control. For programs that need a
 controlling terminal, use the SDK's PTY execution API, which allocates a
 separate terminal and supports resizing and merged output.
-
 ### Deny-by-default filesystem
 
 The baseline mirrors the macOS Seatbelt backend's `(deny default)` posture:

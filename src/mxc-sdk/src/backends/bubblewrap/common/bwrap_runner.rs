@@ -38,7 +38,7 @@ use crate::mxc_pty::{LivePty, PtySize as UnixPtySize};
 
 use crate::bwrap_common::{
     bwrap_command::{self, ResolvedNetworkMode},
-    bwrap_version, network_rules,
+    bwrap_version, lifetime_spawner, network_rules,
     provider_monitor::ProviderMonitor,
     proxy_network,
     resolver_file::ResolverFile,
@@ -629,7 +629,9 @@ impl BubblewrapScriptRunner {
         }
         proxy_network::inherit_descriptors(&mut command, descriptors);
 
-        let mut child = match command.spawn() {
+        // `--die-with-parent` binds bwrap to the forking *thread*, so fork from
+        // one that outlives every sandbox rather than from the caller's.
+        let mut child = match lifetime_spawner::spawn(command) {
             Ok(process) => process,
             Err(error) => {
                 stop_proxy_network(&mut proxy_network, logger);
