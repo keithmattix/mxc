@@ -539,10 +539,6 @@ fn streaming_bubblewrap_reports_no_output_metadata() {
 
 #[test]
 fn streaming_bubblewrap_outlives_the_thread_that_spawned_it() {
-    // `bwrap --die-with-parent` arms PR_SET_PDEATHSIG, which Linux fires when
-    // the *thread* that forked bwrap exits. Callers that spawn on a pooled or
-    // short-lived thread and wait elsewhere must not have the sandbox killed
-    // when that thread is retired.
     if !bwrap_available() {
         return;
     }
@@ -555,7 +551,6 @@ fn streaming_bubblewrap_outlives_the_thread_that_spawned_it() {
         )
         .expect("spawn");
         let stdout = proc.take_stdout().expect("stdout available");
-        // The workload is running, so bwrap has armed its parent-death signal.
         let (line, stdout) = read_within(
             move || {
                 let mut stdout = BufReader::new(stdout);

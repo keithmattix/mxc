@@ -14,10 +14,6 @@ public class MxcContainerBubblewrapE2ETests
     [Fact]
     public void Spawn_OutlivesTheThreadThatSpawnedIt()
     {
-        // `bwrap --die-with-parent` arms PR_SET_PDEATHSIG, which Linux fires
-        // when the *thread* that forked bwrap exits. A caller that spawns on a
-        // thread-pool or short-lived thread and waits elsewhere must not have
-        // the sandbox killed when that thread exits.
         BubblewrapHost.Require();
 
         var (proc, stdout, stdoutCloser) = SpawnOnShortLivedThread();
@@ -58,7 +54,6 @@ public class MxcContainerBubblewrapE2ETests
                     });
                 stdout = new StreamReader(proc.StandardOutput!, Encoding.UTF8);
                 stdoutCloser = proc.StandardOutputCloser;
-                // Keep the spawning thread alive until bwrap has armed its parent-death signal.
                 Assert.Equal("ready", ReadLineWithin(stdout, OperationTimeout));
                 transferred = completion.TrySetResult((proc, stdout, stdoutCloser));
             }

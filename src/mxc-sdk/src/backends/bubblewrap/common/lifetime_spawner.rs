@@ -1,18 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Spawns `bwrap` from a thread that lives as long as the process.
-//!
-//! `bwrap --die-with-parent` arms `PR_SET_PDEATHSIG` in the launcher, and Linux
-//! delivers that signal when the *thread* that forked the launcher exits, not
-//! when its process does. Spawning on the caller's thread therefore ties the
-//! sandbox to that thread: an SDK caller that spawns from a pooled or
-//! short-lived thread (a Tokio `spawn_blocking` worker, a .NET thread-pool
-//! thread, a scoped worker) and waits elsewhere has a still-running sandbox
-//! SIGKILLed when the pool retires the spawning thread.
-//!
-//! Forking from one dedicated thread that never exits keeps the documented
-//! contract -- the sandbox dies with the process -- for every caller.
+//! Launches `bwrap` from a process-lifetime thread so `--die-with-parent`
+//! does not tie the sandbox to a temporary caller thread.
 
 use std::io;
 use std::process::{Child, Command};
@@ -26,10 +16,8 @@ static SPAWNER: Mutex<Option<Sender<SpawnRequest>>> = Mutex::new(None);
 
 /// Spawn `command` from the process-lifetime spawner thread.
 ///
-/// Blocks until the spawn completes and returns its result unchanged. Any
-/// `pre_exec` hooks run in the forked child exactly as with
-/// [`Command::spawn`]; descriptors they reference must stay open until this
-/// returns, which holds because the caller blocks here.
+/// Blocks until the spawn completes and returns its result unchanged.
+/// Descriptors referenced by `pre_exec` must remain open until this call returns.
 pub(crate) fn spawn(command: Command) -> io::Result<Child> {
     let sender = spawner()?;
     let (reply, response) = mpsc::channel();
