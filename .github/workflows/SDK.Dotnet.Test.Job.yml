@@ -144,9 +144,10 @@ jobs:
         run: |
           set -uo pipefail
           log="$RUNNER_TEMP/dotnet-test-bubblewrap.log"
-          dotnet test Microsoft.Mxc.Sdk.Tests/Microsoft.Mxc.Sdk.Tests.csproj \
-            --no-build --no-restore \
-            --filter 'FullyQualifiedName~MxcContainerBubblewrapE2ETests.Spawn_OutlivesTheThreadThatSpawnedIt' \
+          dotnet test \
+            --project Microsoft.Mxc.Sdk.Tests/Microsoft.Mxc.Sdk.Tests.csproj \
+            --no-build --no-restore -- \
+            --filter-method '*MxcContainerBubblewrapE2ETests.Spawn_OutlivesTheThreadThatSpawnedIt*' \
             2>&1 | tee "$log"
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
