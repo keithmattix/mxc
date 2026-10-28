@@ -102,8 +102,9 @@ mod tests {
 
     #[test]
     fn spawn_reports_launch_errors() {
-        let error = spawn(Command::new("mxc-lifetime-spawner-absent-binary"))
-            .expect_err("missing binary must fail");
+        let directory = tempfile::tempdir().expect("create temp directory");
+        let absent_binary = directory.path().join("mxc-lifetime-spawner-absent-binary");
+        let error = spawn(Command::new(absent_binary)).expect_err("missing binary must fail");
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 }
