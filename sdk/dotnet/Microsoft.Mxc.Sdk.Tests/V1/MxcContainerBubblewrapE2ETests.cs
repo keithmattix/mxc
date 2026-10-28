@@ -20,16 +20,10 @@ public class MxcContainerBubblewrapE2ETests
         // the sandbox killed when that thread exits.
         BubblewrapHost.Require();
 
-        var proc = SpawnOnShortLivedThread();
-        StreamReader? stdout = null;
-        MxcStreamCloser? stdoutCloser = null;
+        var (proc, stdout, stdoutCloser) = SpawnOnShortLivedThread();
         var completed = false;
         try
         {
-            stdout = new StreamReader(proc.StandardOutput!, Encoding.UTF8);
-            stdoutCloser = proc.StandardOutputCloser;
-            // The workload is running, so bwrap has armed its parent-death signal.
-            Assert.Equal("ready", ReadLineWithin(stdout, OperationTimeout));
             Assert.Equal("survived", ReadToEndWithin(stdout, OperationTimeout).Trim());
 
             var result = proc.Wait();
@@ -39,46 +33,45 @@ public class MxcContainerBubblewrapE2ETests
         }
         finally
         {
-            try
-            {
-                if (!completed)
-                {
-                    stdoutCloser?.Close();
-                    proc.Kill();
-                }
-            }
-            finally
-            {
-                proc.Dispose();
-                stdoutCloser?.Dispose();
-                stdout?.Dispose();
-            }
+            Cleanup(proc, stdout, stdoutCloser, terminate: !completed);
         }
     }
 
-    private static MxcProcess SpawnOnShortLivedThread()
+    private static (MxcProcess Process, StreamReader Reader, MxcStreamCloser? Closer) SpawnOnShortLivedThread()
     {
-        var completion = new TaskCompletionSource<MxcProcess>(
+        var completion = new TaskCompletionSource<(MxcProcess Process, StreamReader Reader, MxcStreamCloser? Closer)>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var spawner = new Thread(() =>
         {
+            MxcProcess? proc = null;
+            StreamReader? stdout = null;
+            MxcStreamCloser? stdoutCloser = null;
+            var transferred = false;
             try
             {
-                var proc = MxcContainer.Spawn(
+                proc = MxcContainer.Spawn(
                     new ContainerRequest("echo ready; sleep 1; echo survived")
                     {
                         Containment = new Containment.Bubblewrap(),
                         Filesystem = new FilesystemPolicy { ReadwritePaths = ["/tmp"] },
                         TimeoutMs = 30_000,
                     });
-                if (!completion.TrySetResult(proc))
-                {
-                    proc.Dispose();
-                }
+                stdout = new StreamReader(proc.StandardOutput!, Encoding.UTF8);
+                stdoutCloser = proc.StandardOutputCloser;
+                // Keep the spawning thread alive until bwrap has armed its parent-death signal.
+                Assert.Equal("ready", ReadLineWithin(stdout, OperationTimeout));
+                transferred = completion.TrySetResult((proc, stdout, stdoutCloser));
             }
             catch (Exception ex)
             {
                 completion.TrySetException(ex);
+            }
+            finally
+            {
+                if (!transferred && proc is not null)
+                {
+                    Cleanup(proc, stdout, stdoutCloser, terminate: true);
+                }
             }
         })
         {
@@ -94,20 +87,43 @@ public class MxcContainerBubblewrapE2ETests
         {
             if (!completion.TrySetCanceled() && completion.Task.IsCompletedSuccessfully)
             {
-                completion.Task.GetAwaiter().GetResult().Dispose();
+                var abandoned = completion.Task.GetAwaiter().GetResult();
+                Cleanup(abandoned.Process, abandoned.Reader, abandoned.Closer, terminate: true);
             }
             throw new TimeoutException(
                 $"Bubblewrap spawn thread did not finish within {OperationTimeout}.");
         }
 
-        var proc = completion.Task.GetAwaiter().GetResult();
+        var result = completion.Task.GetAwaiter().GetResult();
         if (!spawner.Join(OperationTimeout))
         {
-            proc.Dispose();
+            Cleanup(result.Process, result.Reader, result.Closer, terminate: true);
             throw new TimeoutException(
                 $"Bubblewrap spawn thread did not exit within {OperationTimeout}.");
         }
-        return proc;
+        return result;
+    }
+
+    private static void Cleanup(
+        MxcProcess proc,
+        StreamReader? stdout,
+        MxcStreamCloser? stdoutCloser,
+        bool terminate)
+    {
+        try
+        {
+            if (terminate)
+            {
+                stdoutCloser?.Close();
+                proc.Kill();
+            }
+        }
+        finally
+        {
+            proc.Dispose();
+            stdoutCloser?.Dispose();
+            stdout?.Dispose();
+        }
     }
 
     private static string ReadLineWithin(StreamReader reader, TimeSpan timeout)
